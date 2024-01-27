@@ -2,6 +2,8 @@ use futures::{stream::once, StreamExt};
 use log::*;
 use serde_derive::Deserialize;
 use std::{collections::HashMap, env, time::Duration};
+use tokio::sync::mpsc::Sender;
+use yellowstone_grpc_proto::prelude::SubscribeUpdateSlot;
 use yellowstone_grpc_proto::{
     geyser::{
         geyser_client::GeyserClient, subscribe_update, SubscribeRequest,
@@ -21,7 +23,37 @@ pub struct GrpcConfig {
     pub retry_connection_sleep_secs: u64,
 }
 
-pub async fn subscribe_geyser(config: GrpcConfig) -> anyhow::Result<()> {
+pub async fn subscribe_geyser(
+    config: GrpcConfig,
+    slot_update_sender: Sender<SubscribeUpdateSlot>,
+) -> anyhow::Result<()> {
+    loop {
+        let out = handle_geyser_updates(config.clone(), slot_update_sender.clone());
+        match out.await {
+            // happy case!
+            Err(err) => {
+                warn!(
+                    "error during communication with the geyser plugin - retrying: {:?}",
+                    err
+                );
+            }
+            // this should never happen
+            Ok(_) => {
+                error!("feed_data must return an error, not OK - continue");
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(
+            config.retry_connection_sleep_secs,
+        ))
+        .await;
+    }
+}
+
+pub async fn handle_geyser_updates(
+    config: GrpcConfig,
+    slot_update_sender: Sender<SubscribeUpdateSlot>,
+) -> anyhow::Result<()> {
     info!("connecting {}", &config.grpc_url);
     let tls_config = if config.grpc_url.starts_with("https") {
         Some(ClientTlsConfig::new())
@@ -93,7 +125,7 @@ pub async fn subscribe_geyser(config: GrpcConfig) -> anyhow::Result<()> {
                 let mut update = update.ok_or(anyhow::anyhow!("geyser plugin has closed the stream"))??;
                 match update.update_oneof.as_mut().expect("invalid grpc") {
                     UpdateOneof::Slot(slot_update) => {
-                        println!("{:?}", slot_update);
+                        slot_update_sender.send(slot_update.clone()).await?;
                     },
                     _ => {}
                 }

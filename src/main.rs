@@ -1,10 +1,12 @@
-use log::{error, warn};
-use crate::grpc_plugin::{subscribe_geyser, GrpcConfig};
-use std::{
-    fs::File,
-    io::Read,
+use crate::{
+    chain_data::SlotData,
+    grpc_plugin::{subscribe_geyser, GrpcConfig},
 };
+use chain_data::ChainData;
+use std::{fs::File, io::Read};
+use tokio::{pin, sync::mpsc};
 
+mod chain_data;
 mod grpc_plugin;
 
 #[tokio::main]
@@ -25,26 +27,18 @@ async fn main() -> anyhow::Result<()> {
         toml::from_str(&contents).unwrap()
     };
 
-    // Continuously reconnect on failure
-    loop {
-        let out = subscribe_geyser(config.clone());
-        match out.await {
-            // happy case!
-            Err(err) => {
-                warn!(
-                    "error during communication with the geyser plugin - retrying: {:?}",
-                    err
-                );
-            }
-            // this should never happen
-            Ok(_) => {
-                error!("feed_data must return an error, not OK - continue");
-            }
-        }
+    let (slot_sender, slot_receiver) = mpsc::channel(100);
+    let mut chain_data = ChainData::new();
 
-        tokio::time::sleep(std::time::Duration::from_secs(
-            config.retry_connection_sleep_secs,
-        ))
-        .await;
-    }
+    tokio::spawn(async move {
+        pin!(slot_receiver);
+        loop {
+            let update = slot_receiver.recv().await.unwrap();
+            chain_data.update_slot(SlotData::from_update(update));
+            // TODO: visualize
+            // println!("{:?}", forks);
+        }
+    });
+
+    subscribe_geyser(config, slot_sender).await
 }
