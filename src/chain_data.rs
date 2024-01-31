@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use yellowstone_grpc_proto::prelude::CommitmentLevel;
 use yellowstone_grpc_proto::prelude::SubscribeUpdateSlot;
 
@@ -25,16 +25,31 @@ impl SlotData {
 
     pub fn add_child(&mut self, child: u64) {
         if !self.children.contains(&child) {
-            self.children.push(child)
+            self.children.push(child);
+            self.children.sort();
         }
     }
+
+    pub fn print_slot(&self) {
+        let s = self.slot.to_string();
+        let x = &s[s.len() - 2..];
+        let slot = match self.status {
+            CommitmentLevel::Processed => format!(" {x} -"),
+            CommitmentLevel::Confirmed => format!("({x})-"),
+            CommitmentLevel::Finalized => format!("[{x}]-"),
+        };
+        print!("{slot}");
+    }
+
+    // pub fn get_forks(&self) -> Vec<u64> {
+
+    // }
 }
 
 /// Track slots and forks
 pub struct ChainData {
     /// only slots >= newest_finalized_slot are retained
     pub slots: HashMap<u64, SlotData>,
-    pub forks_by_recent_slot: HashMap<u64, Vec<u64>>,
     pub newest_finalized_slot: u64,
     pub newest_processed_slot: u64,
     pub best_chain_slot: u64,
@@ -44,7 +59,6 @@ impl ChainData {
     pub fn new() -> Self {
         Self {
             slots: HashMap::new(),
-            forks_by_recent_slot: HashMap::new(),
             newest_finalized_slot: 0,
             newest_processed_slot: 0,
             best_chain_slot: 0,
@@ -104,11 +118,9 @@ impl ChainData {
         if new_best_chain || parent_update {
             let slots_to_visit: HashSet<u64> = self.slots.keys().cloned().collect();
 
-            // re-link the chains
             // update the "chain" field down to the first finalized slot
             let slot = self.best_chain_slot;
             let remaining_slots = self.update_chain(slot, slots_to_visit);
-
             for remaining_slot in remaining_slots {
                 // TODO: do less work
                 self.update_chain(remaining_slot, HashSet::new());
@@ -144,5 +156,49 @@ impl ChainData {
         }
 
         slots_to_visit.into_iter().collect()
+    }
+
+    // TODO: small screens?
+
+    /// Recursively prints the current chain and forks to the console
+    pub fn print(&self) {
+        print!("{esc}c", esc = 27 as char); // clear
+        println!("current slot: {}\n", self.newest_processed_slot);
+        // if self.has_fork() {
+        //     println!("fork at slot: {}\n", self.newest_processed_slot);
+
+        // }
+
+        self.print_inner(self.newest_finalized_slot, false, 0)
+    }
+
+    fn print_inner(&self, slot: u64, newline: bool, offset: usize) {
+        if let Some(data) = self.slots.get(&slot) {
+            if newline {
+                print_newline(offset);
+            };
+
+            data.print_slot();
+            let new_offset = offset + 5;
+
+            for (cd, child) in data.children.clone().iter().enumerate() {
+                self.print_inner(*child, cd > 0, new_offset);
+            }
+        }
+    }
+}
+
+fn print_newline(offset: usize) {
+    print!("\n");
+    print_spaces(offset);
+    print!("|");
+    print!("\n");
+    print_spaces(offset);
+    print!("+ -");
+}
+
+fn print_spaces(spaces: usize) {
+    for _ in 0..spaces - 3 {
+        print!(" ");
     }
 }

@@ -35,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
         loop {
             let update = slot_receiver.recv().await.unwrap();
             chain_data.update_slot(SlotData::from_update(update));
-            // TODO: visualize
-            // println!("{:?}", forks);
+            chain_data.print();
+            println!("\n\n");
         }
     });
 
