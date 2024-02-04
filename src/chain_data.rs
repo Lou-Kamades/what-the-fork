@@ -40,10 +40,6 @@ impl SlotData {
         };
         print!("{slot}");
     }
-
-    // pub fn get_forks(&self) -> Vec<u64> {
-
-    // }
 }
 
 /// Track slots and forks
@@ -63,6 +59,16 @@ impl ChainData {
             newest_processed_slot: 0,
             best_chain_slot: 0,
         }
+    }
+
+    pub fn get_forks(&self) -> Vec<u64> {
+        let mut fork_slots = vec![];
+        for data in self.slots.iter() {
+            if data.1.children.len() > 1 {
+                fork_slots.push(*data.0)
+            }
+        }
+        fork_slots
     }
 }
 

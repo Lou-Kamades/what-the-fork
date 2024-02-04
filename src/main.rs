@@ -35,7 +35,9 @@ async fn main() -> anyhow::Result<()> {
         loop {
             let update = slot_receiver.recv().await.unwrap();
             chain_data.update_slot(SlotData::from_update(update));
-            chain_data.print();
+            chain_data.print();            
+            let f = chain_data.get_forks();
+            println!("\nforks @ : {:#?}", f);
             println!("\n\n");
         }
     });
